@@ -127,7 +127,7 @@ final class OverrideClickResolverTests: XCTestCase {
             "matches the global is irrelevant — the override stays SET.")
     }
 
-    // MARK: - Resolver uses `valueAtIndex` to encode the value
+    // MARK: - Encoding & defensive handling
 
     /// The resolver doesn't assume the persisted value is the index — it asks `valueAtIndex` to
     /// produce the string. Verifies switching encoders works.

@@ -1,5 +1,7 @@
 # Pro Transition — Complete UI Specification
 
+> **Line coverage:** `ProTransitionManagerTestable.swift` 100% · _refreshed 2026-05-27 by `/coverage-explore`_
+
 ---
 
 ## State Diagram
@@ -149,3 +151,97 @@ The first post-expiration switcher open always triggers free-pass + `[C]` (one-s
 | User clicks ⨉ on [G] (not "don't ask again") | `hasSeenDay35 = true`. Not opted out. [E] popovers continue. No more proactive prompts. |
 | User opted out | No proactive prompts ever. [E] still fires on hard-gate attempts (user-initiated). Max 1/session. Purchase in Preferences. |
 | User purchases at any point | All prompts stop. All gates removed. All indicators cleared. |
+
+---
+
+## Test scenarios
+
+Mirrors `ProTransitionTests.swift` 1:1. The tests drive `ProTransitionManagerTestable` — a pure state
+struct + decision functions (`evaluateTimedAction`, `evaluateHardGate`, `evaluateSwitcherOpen`,
+`shouldShowBadgeDot`, `isSchedulingComplete`, `isInTimeWindow`) — so the entire flow above is verified
+deterministically without AppKit, windows, or real time.
+
+### Timed action: Day 1 Welcome
+- **testDay1_welcomeShows** — [A] shows on first launch.
+- **testDay1_welcomeBlocksAllOtherActions** — [A] is exclusive that day.
+
+### Timed action: Day 12 Heads-Up
+- **testDay12_headsUpShowsInTimeWindow** — [B] shows on Day 12 inside the time window.
+- **testDay12_headsUpSkippedOutsideTimeWindow** — skipped outside the window.
+- **testDay12_headsUpNotShownTwice** — once-ever.
+- **testDay12_tooEarly** — not before Day 12.
+
+### Timed action: Day 15 Proactive
+- **testDay15_proactiveShowsIfNoHardGate** — [D] shows if no hard-gate fired yet.
+- **testDay15_proactiveSkippedIfFullUpgradeAlreadyShown** — skipped once [C] has shown.
+- **testDay15_proactiveSkippedOutsideTimeWindow** — window-gated.
+
+### Timed action: Day 21 Reminder
+- **testDay21_reminderShows** — [F] shows ~Day 21.
+- **testDay21_reminderNotShownTwice** — once-ever.
+
+### Timed action: Day 35 Final
+- **testDay35_finalShows** — [G] shows ~Day 35.
+- **testDay49_givesUp** — gives up after Day 49.
+
+### Timed action: Pro user
+- **testProUser_noTimedActions** — purchasers get no prompts.
+- **testProUser_noTimedActionsEvenOnDay35** — still none at Day 35.
+
+### Hard-gate: trial active
+- **testHardGate_allowedDuringTrial** — gated features run during the trial.
+- **testHardGate_allowedForProUser** — and for Pro users.
+
+### Hard-gate: free pass
+- **testHardGate_freePassOnFirstAttempt** — first post-expiry attempt gets a one-time free pass.
+- **testHardGate_fullUpgradeAfterFreePass** — then [C] shows.
+
+### Hard-gate: post-[C] popover
+- **testHardGate_popoverAfterFullUpgrade** — [E] fires on every hard-gate attempt after [C].
+
+### Hard-gate: [D]-shown-but-free-pass-unused edge
+- **testHardGate_freePassStillAvailableAfterProactiveDay15** — free pass survives a prior [D].
+
+### Hard-gate: opted out
+- **testHardGate_popoverStillFiresAfterOptOut** — [E] still fires after opt-out (user-initiated).
+
+### Badge dot
+- **testBadgeDot_showsOnDays13and14** · **testBadgeDot_notShownBeforeDay13** · **testBadgeDot_removedOnDay15** · **testBadgeDot_notShownForProUser**
+
+### Scheduling completeness
+- **testSchedulingComplete_forProUser** · **testSchedulingComplete_afterOptOutAndDay35** · **testSchedulingNotComplete_optedOutButDay35NotShown** · **testSchedulingComplete_allEventsShown** · **testSchedulingComplete_allEventsShown_fullUpgradeInsteadOfProactive**
+
+### Time window (10:00–11:30 / 15:30–17:00)
+- **testTimeWindow_10am** · **testTimeWindow_1130am** · **testTimeWindow_330pm** · **testTimeWindow_4pm** · **testTimeWindow_5pm** — inside.
+- **testTimeWindow_9am_outside** · **testTimeWindow_1131am_outside** · **testTimeWindow_1pm_gap** · **testTimeWindow_2pm_outside** · **testTimeWindow_230pm_outside** · **testTimeWindow_329pm_outside** · **testTimeWindow_501pm_outside** · **testTimeWindow_midnight** — outside.
+
+### Switcher open: Day 4 Pro tour
+- **testSwitcherOpen_day4TourFiresFirstTime** · **testSwitcherOpen_day4TourNotShownTwice** · **testSwitcherOpen_day4TourSkippedOnDay3** · **testSwitcherOpen_day4TourSkippedOnDay5** · **testSwitcherOpen_day4TourSkippedForProUser**
+
+### Switcher open: post-expiration trigger
+- **testSwitcherOpen_postExpirationFires** · **testSwitcherOpen_postExpirationNoopAfterTriggered** · **testSwitcherOpen_postExpirationNoopAfterFreePassConsumed** · **testSwitcherOpen_postExpirationNoopDuringTrial** · **testSwitcherOpen_proUserNoop**
+
+### Full flows
+- **testFullFlow_degradableOnly** — user who never trips a hard gate.
+- **testFullFlow_hardGateUser** — user who does.
+- **testPurchase_stopsEverything** — purchase halts all prompts/gates.
+- **testFullFlow_postExpirationSwitcherTrigger** — engaged user: Day-15 open → free-pass + [C].
+- **testFullFlow_nonEngagedUser** — non-engaged: Day-15 open → free-pass + [C] (`.nonEngaged`); [D] suppressed.
+
+### Edge case: Day 35 close ⨉ vs opt-out
+- **testDay35_closeDoesNotOptOut** · **testDay35_optOutStopsTimedButNotHardGate**
+
+### Cross-event ordering (Day 21 vs Day 35)
+- **testDay35_skipsDay21WhenDueSimultaneously** · **testDay21_notShownOnOrAfterDay35** · **testDay21_notShownPastDay49**
+
+### Day 35 retry window
+- **testDay35_retriesOnDay36** · **testDay35_retriesOnDay48**
+
+### Day 49 give-up
+- **testSchedulingComplete_pastDay49EvenWithoutDay35**
+
+### Day 12 skip-entirely
+- **testDay12_skipsEntirelyOnDay13** · **testDay12_skipsEntirelyOnDay14**
+
+### Day 15 Proactive — direct coverage
+- **testDay15_proactiveNotShownIfAlreadySeen** · **testDay15_proactiveShowsOnLaterDayIfStillNotShown**
