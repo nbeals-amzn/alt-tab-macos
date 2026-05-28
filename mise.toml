@@ -1,0 +1,67 @@
+[tasks.check-xcode]
+description = "Verify xcodebuild is installed and optionally warn if not a known-good version"
+run = """
+if ! command -v xcodebuild &>/dev/null; then
+  echo "ERROR: xcodebuild not found. Install Xcode from the App Store." >&2
+  exit 1
+fi
+version=$(xcodebuild -version | head -1)
+build=$(xcodebuild -version | tail -1 | awk '{print $NF}')
+echo "Found: $version (Build $build)"
+if ! grep -q "$version" .xcode-versions; then
+  echo "WARNING: $version is not in .xcode-versions — build may behave unexpectedly"
+fi
+"""
+
+[tasks.setup-cert]
+description = "Generate and import a self-signed code signing certificate"
+run = "./scripts/codesign/setup_local.sh"
+
+[tasks.setup-xcconfig]
+description = "Create config/local.xcconfig with local build settings"
+run = """
+cat > config/local.xcconfig <<'EOF'
+CODE_SIGN_IDENTITY = Local Self-Signed
+APPCENTER_SECRET = 6b453477-5608-4083-afa1-f88d696a061d
+CURRENT_PROJECT_VERSION = 99.0.0
+EOF
+echo "Created config/local.xcconfig"
+"""
+
+[tasks.setup]
+description = "First-time setup: certificate + xcconfig"
+depends = ["setup-cert", "setup-xcconfig"]
+
+[tasks.build]
+description = "Clean build the Release configuration"
+depends = ["check-xcode"]
+sources = ["src/**/*.swift", "config/*.xcconfig", "Info.plist", "vendor/**/*.swift"]
+outputs = ["DerivedData/Build/Products/Release/AltTab.app/**/*"]
+run = """
+xcodebuild -project alt-tab-macos.xcodeproj \
+  -scheme Release -configuration Release \
+  -derivedDataPath DerivedData clean build
+"""
+
+[tasks.install]
+description = "Install built app to /Applications"
+depends = ["build"]
+run = """
+rm -rf /Applications/AltTab.app
+cp -R DerivedData/Build/Products/Release/AltTab.app /Applications/
+xattr -cr /Applications/AltTab.app
+echo "Installed to /Applications/AltTab.app"
+"""
+
+[tasks.reset-permissions]
+description = "Reset Accessibility permissions for AltTab"
+run = "tccutil reset Accessibility com.lwouis.alt-tab-macos"
+
+[tasks.launch]
+description = "Launch AltTab from /Applications"
+run = "open /Applications/AltTab.app"
+
+[tasks.deploy]
+description = "Build, install, and launch"
+depends = ["install"]
+run = "open /Applications/AltTab.app"
